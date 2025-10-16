@@ -1,0 +1,108 @@
+/* lampa_remote_keyboard.js
+   Remote-friendly keyboard modal for Lampa.
+   Save as .js and provide raw URL to Lampa plugins.
+*/
+
+(function(){
+  const IP_PREFIX = '192.168.0.';
+  const IP_START = 100;
+  const IP_END = 199;
+  const IP_PORT = 8090;
+  const STORAGE_KEY = 'lampa_remote_keyboard_last';
+
+  // helper
+  function $(s, ctx=document) { return ctx.querySelector(s); }
+  function $all(s, ctx=document) { return Array.from((ctx||document).querySelectorAll(s)); }
+  function el(tag, attrs={}, children=[]){
+    const e = document.createElement(tag);
+    Object.entries(attrs).forEach(([k,v])=>{
+      if(k === 'style') Object.assign(e.style, v);
+      else if(k === 'text') e.textContent = v;
+      else e.setAttribute(k, v);
+    });
+    (Array.isArray(children)?children:[children]).forEach(c=>{ if(!c) return; if(typeof c==='string') e.appendChild(document.createTextNode(c)); else e.appendChild(c); });
+    return e;
+  }
+
+  // Build keyboard markup
+  function buildKeyboard(){
+    if(document.getElementById('lampa_remote_kb')) return;
+    const wrap = el('div',{id:'lampa_remote_kb', style:{
+      position:'fixed', left:0, right:0, bottom:0, top:0, zIndex:9999999,
+      display:'flex', alignItems:'center', justifyContent:'center', background:'rgba(0,0,0,0.45)'
+    }});
+    const card = el('div',{style:{
+      width:'min(980px,96%)', background:'#0f0f0f', color:'#fff', borderRadius:'10px', padding:'14px',
+      boxShadow:'0 8px 32px rgba(0,0,0,0.6)', fontFamily:'sans-serif'
+    }});
+    // header input
+    const headerRow = el('div',{style:{display:'flex', gap:'8px', marginBottom:'10px', alignItems:'center'}});
+    const title = el('div',{text:'Remote keyboard', style:{fontWeight:700, fontSize:'16px', minWidth:'160px'}});
+    const input = el('input',{id:'lampa_remote_kb_input', type:'text', style:{
+      flex:'1', padding:'10px 12px', fontSize:'18px', borderRadius:'6px', border:'1px solid #333', background:'#121212', color:'#fff'
+    }});
+    const pasteBtn = el('button',{id:'lampa_remote_kb_paste', text:'Paste', tabindex:0, style:{padding:'8px 10px', borderRadius:'6px'}});
+    headerRow.appendChild(title); headerRow.appendChild(input); headerRow.appendChild(pasteBtn);
+
+    // keyboard rows
+    const keysWrap = el('div',{style:{display:'grid', gap:'6px', marginBottom:'10px'}});
+    // define rows (you can tune)
+    const rows = [
+      'q w e r t y u i o p'.split(' '),
+      'a s d f g h j k l'.split(' '),
+      'z x c v b n m @ . _ -'.split(' '),
+      '1 2 3 4 5 6 7 8 9 0'.split(' '),
+      ': / ? = & % + * $ #'.split(' ')
+    ];
+    rows.forEach(r=>{
+      const row = el('div',{style:{display:'flex', gap:'6px', justifyContent:'center'}});
+      r.forEach(k=>{
+        const b = el('button',{class:'lampa_kb_key', text:k, tabindex:0, style:{
+          padding:'12px 12px', minWidth:'52px', fontSize:'16px', borderRadius:'6px', border:'1px solid #333', background:'#151515', color:'#fff'
+        }});
+        row.appendChild(b);
+      });
+      keysWrap.appendChild(row);
+    });
+
+    // actions row: backspace, clear, ip-select, ok
+    const actions = el('div',{style:{display:'flex', gap:'8px', justifyContent:'center'}});
+    const back = el('button',{id:'lampa_kb_backspace', text:'Backspace', tabindex:0, style:{padding:'10px 12px', borderRadius:'6px'}});
+    const clear = el('button',{id:'lampa_kb_clear', text:'Clear', tabindex:0, style:{padding:'10px 12px', borderRadius:'6px'}});
+    const ipBtn = el('button',{id:'lampa_kb_ip', text:'IP select', tabindex:0, style:{padding:'10px 12px', borderRadius:'6px'}});
+    const ok = el('button',{id:'lampa_kb_ok', text:'OK', tabindex:0, style:{padding:'10px 12px', borderRadius:'6px', fontWeight:700}});
+    actions.appendChild(back); actions.appendChild(clear); actions.appendChild(ipBtn); actions.appendChild(ok);
+
+    // ip selector hidden panel
+    const ipPanel = el('div',{id:'lampa_kb_ip_panel', style:{display:'none', marginTop:'8px', maxHeight:'200px', overflow:'auto', padding:'6px', border:'1px solid #222', borderRadius:'6px', background:'#0b0b0b'}});
+    const ipGrid = el('div',{style:{display:'grid', gridTemplateColumns:'repeat(6,1fr)', gap:'6px'}});
+    for(let i=IP_START;i<=IP_END;i++){
+      const ip = `${IP_PREFIX}${i}:${IP_PORT}`;
+      const b = el('button',{class:'lampa_kb_ip_item', text:ip, tabindex:0, style:{padding:'8px', fontSize:'14px', borderRadius:'6px'}});
+      ipGrid.appendChild(b);
+    }
+    ipPanel.appendChild(ipGrid);
+
+    card.appendChild(headerRow);
+    card.appendChild(keysWrap);
+    card.appendChild(actions);
+    card.appendChild(ipPanel);
+    wrap.appendChild(card);
+    document.body.appendChild(wrap);
+
+    // event wiring
+    function insertAtCursor(inputEl, text){
+      const start = inputEl.selectionStart || 0;
+      const end = inputEl.selectionEnd || 0;
+      const v = inputEl.value || '';
+      inputEl.value = v.slice(0,start) + text + v.slice(end);
+      const pos = start + text.length;
+      inputEl.setSelectionRange(pos,pos);
+      inputEl.focus();
+    }
+
+    // clicking key
+    keysWrap.addEventListener('click', e=>{
+      const b = e.target.closest('button.lampa_kb_key');
+      if(!b) return;
+      insertAtCursor(input, b.text
